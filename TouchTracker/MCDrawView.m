@@ -9,11 +9,13 @@
 #import "MCDrawView.h"
 #import "MCLine.h"
 
-@interface MCDrawView ()
+@interface MCDrawView () <UIGestureRecognizerDelegate>
 
 // @property (nonatomic, strong) MCLine *currentLine;
+@property (nonatomic, strong) UIPanGestureRecognizer *moveRecognizer;
 @property (nonatomic, strong) NSMutableDictionary *linesInProgress;
 @property (nonatomic, strong) NSMutableArray *finishedLines;
+
 @property (nonatomic, weak) MCLine *selectedLine;
 
 @end
@@ -21,7 +23,7 @@
 
 @implementation MCDrawView
 
-
+# pragma mark -InitFrame
 - (instancetype)initWithFrame:(CGRect)r {
     
     self = [super initWithFrame:r];
@@ -32,6 +34,7 @@
         self.backgroundColor = [UIColor grayColor];
         self.multipleTouchEnabled = YES;
         
+        // double tap
         UITapGestureRecognizer *doubleTapRecognizer =
             [[UITapGestureRecognizer alloc] initWithTarget:self
                                                     action:@selector(doubleTap:)];
@@ -41,6 +44,7 @@
         
         [self addGestureRecognizer:doubleTapRecognizer];
         
+        // single tap
         UITapGestureRecognizer *tapRecognizer =
         [[UITapGestureRecognizer alloc] initWithTarget:self
                                                 action:@selector(tap:)];
@@ -49,64 +53,37 @@
         [tapRecognizer requireGestureRecognizerToFail:doubleTapRecognizer];
         [self addGestureRecognizer:tapRecognizer];
         
+        // long press
+        UILongPressGestureRecognizer *pressRecognizer =
+            [[UILongPressGestureRecognizer alloc] initWithTarget:self
+                                                          action:@selector(longPress:)];
+        [self addGestureRecognizer:pressRecognizer];
+        
+        // pan gesture
+        self.moveRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self
+                                                                      action:@selector(moveLine:)];
+        self.moveRecognizer.delegate = self;
+        self.moveRecognizer.cancelsTouchesInView = NO;
+        [self addGestureRecognizer:self.moveRecognizer];
+        
     }
     return self;
-}
-
-- (void)doubleTap:(UIGestureRecognizer *)gr {
-    
-    NSLog(@"Recognized Double Tap");
-    
-    [self.linesInProgress removeAllObjects];
-    [self.finishedLines removeAllObjects];
-    [self setNeedsDisplay];
-    
-}
-
-- (void)tap:(UIGestureRecognizer *)gr {
-    NSLog(@"Recognized tap");
-    
-    CGPoint point = [gr locationInView:self];
-    self.selectedLine = [self lineAtPoint:point];
-    
-    if (self.selectedLine) {
-        
-        // make ourselves the target of menu item action messages
-        [self becomeFirstResponder];
-        
-        // grab the menu controller
-        UIMenuController *menu = [UIMenuController sharedMenuController];
-        
-        // create a new "Delete" UIMenuItem
-        UIMenuItem *deleteItem = [[UIMenuItem alloc] initWithTitle:@"Delete"
-                                                            action:@selector(deleteLine:)];
-        menu.menuItems = @[deleteItem];
-        
-        // tell the menu where it should come from and show it
-        [menu setTargetRect:CGRectMake(point.x, point.y, 2, 2) inView:self];
-        [menu setMenuVisible:YES animated:YES];
-        
-    } else {
-        // hide the menu if no line is selected
-        [[UIMenuController sharedMenuController] setMenuVisible:NO animated:YES];
-    }
-    
-    [self setNeedsDisplay];
 }
 
 - (BOOL)canBecomeFirstResponder {
     return YES;
 }
 
-- (void)deleteLine:(id)sender {
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
+shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other {
     
-    //remove the selected line from the list of finishedLines
-    [self.finishedLines removeObject:self.selectedLine];
-    
-    // redraw everything
-    [self setNeedsDisplay];
+    if (gestureRecognizer == self.moveRecognizer) {
+        return YES;
+    }
+    return NO;
 }
 
+# pragma mark -Drawing
 - (MCLine *)lineAtPoint:(CGPoint)p {
     
     // find a line close to p
@@ -171,6 +148,7 @@
     
 }
 
+# pragma mark -TouchEvents
 - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
     
     // put in a log statement to see the order of events
@@ -261,6 +239,103 @@
         NSValue *key = [NSValue valueWithNonretainedObject:t];
         [self.linesInProgress removeObjectForKey:key];
         
+    }
+    
+}
+
+- (void)doubleTap:(UIGestureRecognizer *)gr {
+    
+    NSLog(@"Recognized Double Tap");
+    
+    [self.linesInProgress removeAllObjects];
+    [self.finishedLines removeAllObjects];
+    [self setNeedsDisplay];
+    
+}
+
+- (void)tap:(UIGestureRecognizer *)gr {
+    NSLog(@"Recognized tap");
+    
+    CGPoint point = [gr locationInView:self];
+    self.selectedLine = [self lineAtPoint:point];
+    
+    if (self.selectedLine) {
+        
+        // make ourselves the target of menu item action messages
+        [self becomeFirstResponder];
+        
+        // grab the menu controller
+        UIMenuController *menu = [UIMenuController sharedMenuController];
+        
+        // create a new "Delete" UIMenuItem
+        UIMenuItem *deleteItem = [[UIMenuItem alloc] initWithTitle:@"Delete"
+                                                            action:@selector(deleteLine:)];
+        menu.menuItems = @[deleteItem];
+        
+        // tell the menu where it should come from and show it
+        [menu setTargetRect:CGRectMake(point.x, point.y, 2, 2) inView:self];
+        [menu setMenuVisible:YES animated:YES];
+        
+    } else {
+        // hide the menu if no line is selected
+        [[UIMenuController sharedMenuController] setMenuVisible:NO animated:YES];
+    }
+    
+    [self setNeedsDisplay];
+}
+
+- (void)deleteLine:(id)sender {
+    
+    //remove the selected line from the list of finishedLines
+    [self.finishedLines removeObject:self.selectedLine];
+    
+    // redraw everything
+    [self setNeedsDisplay];
+}
+
+- (void)longPress:(UIGestureRecognizer *)gr {
+    
+    if (gr.state == UIGestureRecognizerStateBegan) {
+        CGPoint point = [gr locationInView:self];
+        self.selectedLine = [self lineAtPoint:point];
+        
+        if (self.selectedLine) {
+            [self.linesInProgress removeAllObjects];
+        }
+    } else if (gr.state == UIGestureRecognizerStateEnded) {
+        self.selectedLine = nil;
+    }
+    [self setNeedsDisplay];
+}
+
+- (void)moveLine:(UIPanGestureRecognizer *)gr {
+    
+    // if we have not selected a line, we do not do anything here
+    if (!self.selectedLine) {
+        return;
+    }
+    
+    // when the pan recognizer changes its position ...
+    if (gr.state == UIGestureRecognizerStateChanged) {
+        // how far has the pan moved?
+        CGPoint translation = [gr translationInView:self];
+        
+        // add the translation to the current beginning and end points of the line
+        CGPoint begin = self.selectedLine.begin;
+        CGPoint end = self.selectedLine.end;
+        begin.x += translation.x;
+        begin.y += translation.y;
+        end.x += translation.x;
+        end.y += translation.y;
+        
+        // set the new beginning and end points of the line
+        self.selectedLine.begin = begin;
+        self.selectedLine.end = end;
+        
+        // redraw the screen
+        [self setNeedsDisplay];
+        
+        [gr setTranslation:CGPointZero inView:self];
     }
     
 }
